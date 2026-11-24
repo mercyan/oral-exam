@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="口试">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="robots" content="noindex">
+<title>口试 Oral Exam</title>
+<!--
+  Oral exam recorder, Chinese 2 + 3 (Santa Fe College). One iPad, pairs record on their own.
+  Recordings live only in this browser's storage on the device (IndexedDB). Nothing is uploaded.
+  The page ships with NO card text: the teacher loads cards once from a private #setup= link
+  (the hash never reaches the server) or types them in the teacher screen.
+-->
+<style>
+  :root {
+    --ink: #1a1a1a; --mute: #5e5e5e; --faint: #aaa; --line: #e3e0da;
+    --paper: #f6f4f0; --card: #fff; --red: #c0392b; --red-soft: #fbeceb; --green: #2e8b57;
+    --serif: Georgia, "Songti SC", serif;
+    --sans: -apple-system, "Helvetica Neue", Helvetica, "PingFang SC", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--sans); color: var(--ink); background: var(--paper);
+    -webkit-text-size-adjust: 100%; -webkit-user-select: none; user-select: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  input, textarea { -webkit-user-select: text; user-select: text; }
+  main { max-width: 780px; margin: 0 auto; padding: 32px 28px 48px; }
+  .screen { display: none; }
+  .screen.on { display: block; }
+
+  h1 { font-family: var(--serif); font-size: 46px; margin: 0; font-weight: 700; }
+  h1 small { font-size: 30px; color: var(--mute); font-weight: 600; margin-left: 10px; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 28px; }
+  .gear { background: none; border: 0; font-size: 30px; color: var(--faint); padding: 6px 10px; cursor: pointer; }
+
+  label.h { display: block; font-size: 20px; font-weight: 700; margin: 22px 0 10px; }
+  .seg { display: flex; gap: 10px; }
+  .seg button {
+    flex: 1; font-size: 22px; padding: 16px; border-radius: 14px; border: 2px solid var(--line);
+    background: var(--card); color: var(--ink); font-family: var(--sans); cursor: pointer;
+  }
+  .seg button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+  input.name {
+    width: 100%; font-size: 24px; padding: 16px 18px; margin-bottom: 12px; border-radius: 14px;
+    border: 2px solid var(--line); background: var(--card); font-family: var(--sans);
+  }
+  input.name:focus { outline: none; border-color: var(--ink); }
+
+  .btn {
+    display: block; width: 100%; font-size: 26px; font-weight: 700; padding: 20px; border-radius: 16px;
+    border: 0; background: var(--ink); color: #fff; font-family: var(--sans); cursor: pointer; margin-top: 26px;
+  }
+  .btn:disabled { opacity: .3; }
+  .btn.red { background: var(--red); font-size: 34px; }
+  .btn.ghost { background: none; color: var(--red); border: 3px solid var(--red); }
+  .row { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
+  .small {
+    font-size: 18px; padding: 12px 18px; border-radius: 12px; border: 2px solid var(--line);
+    background: var(--card); color: var(--ink); font-family: var(--sans); cursor: pointer;
+  }
+
+  .notice { background: var(--red-soft); border-radius: 14px; padding: 16px 18px; margin: 18px 0; font-size: 18px; line-height: 1.4; }
+  .notice b { color: var(--red); }
+
+  .pair { text-align: center; color: var(--mute); font-size: 20px; margin-bottom: 14px; }
+  .card { background: var(--card); border-radius: 20px; padding: 26px 28px; border: 1px solid var(--line); }
+  .card .t { font-family: var(--serif); font-size: 30px; font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 16px; }
+  .card .t span { color: var(--mute); font-size: 22px; margin-left: 8px; }
+  .card .lead { font-size: 24px; font-weight: 700; margin: 0 0 14px; }
+  .card ol { margin: 0 0 16px; padding-left: 34px; font-size: 24px; line-height: 1.4; }
+  .card ol li { margin-bottom: 10px; padding-left: 4px; }
+  .card p { font-size: 20px; margin: 10px 0 0; line-height: 1.4; }
+  .card .g { font-weight: 700; margin-top: 14px; }
+
+  .clock { text-align: center; margin-top: 24px; }
+  .clock .lbl { font-size: 20px; color: var(--mute); }
+  .clock .n { font-size: 84px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .rec { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 24px; }
+  .dot { width: 24px; height: 24px; border-radius: 50%; background: var(--red); animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .rec .w { font-size: 26px; font-weight: 700; color: var(--red); }
+  .rec .n { font-size: 46px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .meter { height: 14px; background: #e6e4df; border-radius: 7px; overflow: hidden; margin: 18px 0 8px; }
+  .meter div { height: 100%; width: 0; background: var(--green); transition: width .1s linear; }
+  .hint { text-align: center; color: var(--mute); font-size: 17px; }
+
+  .done { text-align: center; padding-top: 80px; }
+  .done .tick { font-size: 96px; color: var(--green); line-height: 1; }
+  .done h2 { font-size: 46px; margin: 18px 0; }
+  .done p { font-size: 22px; line-height: 1.4; }
+  .warn { color: #b9770e; }
+
+  /* teacher */
+  .t-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .t-head h2 { font-size: 32px; margin: 0; }
+  section.box { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin: 18px 0; }
+  section.box h3 { margin: 0 0 12px; font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .recrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .recrow:first-of-type { border-top: 0; }
+  .recrow .nm { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 15px; word-break: break-all; }
+  .recrow .nm small { display: block; color: var(--mute); font-family: var(--sans); font-size: 14px; }
+  .ico { font-size: 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; color: var(--ink); }
+  .ico.del { color: var(--red); }
+  textarea { width: 100%; font-size: 17px; font-family: var(--sans); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); min-height: 64px; margin-bottom: 8px; }
+  .hintrow { display: flex; gap: 8px; align-items: flex-start; }
+  .hintrow b { padding-top: 12px; width: 22px; }
+  .muted { color: var(--mute); font-size: 15px; line-height: 1.4; }
+  .field { font-size: 18px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); width: 140px; }
+  audio { width: 100%; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- 1 · names -->
+  <div class="screen on" id="s-setup">
+    <div class="top">
+      <h1>口试<small>Oral Exam</small></h1>
+      <button class="gear" id="gear" aria-label="Teacher">⚙︎</button>
+    </div>
+    <div class="notice" id="noCards" hidden><b>No cards loaded yet.</b> Teacher: open the setup link on this iPad once, or add the hints in the teacher screen (⚙︎).</div>
+    <div class="notice" id="noMic" hidden><b>The microphone is blocked.</b> Teacher: in Settings → Apps → Safari → Microphone, choose Ask or Allow. Then reload this page.</div>
+    <div class="notice" id="noSupport" hidden><b>This browser cannot record.</b> Open this page in Safari on the iPad.</div>
+
+    <label class="h">Your class</label>
+    <div class="seg" id="levelSeg">
+      <button data-level="C2" class="on">中文二 &nbsp;Chinese 2</button>
+      <button data-level="C3">中文三 &nbsp;Chinese 3</button>
+    </div>
+
+    <label class="h">Your names</label>
+    <input class="name" id="n1" placeholder="Student 1" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+    <input class="name" id="n2" placeholder="Student 2" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+
+    <button class="btn" id="start" disabled>Start</button>
+  </div>
+
+  <!-- 2 · practice -->
+  <div class="screen" id="s-prep">
+    <div class="pair" data-pair></div>
+    <div data-card></div>
+    <div class="clock"><div class="lbl">Practice time</div><div class="n" id="prepClock">3:00</div></div>
+    <div class="row">
+      <button class="small" id="back">Back</button>
+      <button class="small" id="early">We're ready early</button>
+    </div>
+  </div>
+
+  <!-- 3 · ready -->
+  <div class="screen" id="s-ready">
+    <div class="pair" data-pair></div>
+    <div data-card></div>
+    <p style="text-align:center;font-size:24px;font-weight:700;margin:26px 0 0">Practice time is over.</p>
+    <button class="btn red" id="record">● Record</button>
+  </div>
+
+  <!-- 4 · recording -->
+  <div class="screen" id="s-rec">
+    <div class="pair" data-pair></div>
+    <div data-card></div>
+    <div class="rec"><div class="dot"></div><div class="w">Recording</div><div class="n" id="recClock">0:00</div></div>
+    <div class="meter"><div id="meter"></div></div>
+    <div class="hint">Speak toward the iPad. The green bar moves when it hears you.</div>
+    <button class="btn ghost" id="stop">■ Stop</button>
+  </div>
+
+  <!-- 5 · saved -->
+  <div class="screen" id="s-done">
+    <div class="done">
+      <div class="tick">✓</div>
+      <h2>Saved. 谢谢！</h2>
+      <p class="warn" id="doneWarn" hidden>The recording stopped early, but what you said is saved. Tell your teacher.</p>
+      <p>Go back to class and finish the Canvas part.<br>Send the next pair in.</p>
+      <button class="btn" id="next">Next pair</button>
+    </div>
+  </div>
+
+  <!-- teacher -->
+  <div class="screen" id="s-teacher">
+    <div class="t-head"><h2>Teacher</h2><button class="small" id="tDone">Done</button></div>
+
+    <section class="box">
+      <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
+      <div id="recList"></div>
+      <audio id="player" controls hidden></audio>
+      <p class="muted">Save opens the iPad share sheet: choose Save to Files, or AirDrop to your Mac. Recordings stay in Safari on this iPad until you delete them. <span id="storageInfo"></span></p>
+    </section>
+
+    <section class="box" id="cardsBox"></section>
+
+    <section class="box">
+      <h3>Practice timer</h3>
+      <input class="field" id="prepMin" type="number" min="1" max="10" inputmode="numeric"> minutes
+    </section>
+
+    <section class="box">
+      <h3>GitHub backup</h3>
+      <p class="muted" style="margin-top:0">Each recording is copied to a private GitHub repo as soon as it is saved. The copy on this iPad stays too.</p>
+      <p style="margin:8px 0 4px">Repo</p>
+      <input class="field" id="ghRepo" style="width:100%" placeholder="mercyan/oral-exam-recordings" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <p style="margin:12px 0 4px">Access token <span class="muted" id="ghTokenState"></span></p>
+      <input class="field" id="ghToken" style="width:100%" type="password" placeholder="Paste a new token to replace" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <div class="row" style="justify-content:flex-start">
+        <button class="ico" id="ghSave">Save and test</button>
+        <button class="ico" id="ghRetry">Back up all now</button>
+        <button class="ico del" id="ghClear">Remove token</button>
+      </div>
+      <p class="muted" id="ghStatus"></p>
+    </section>
+
+    <section class="box">
+      <h3>Teacher PIN</h3>
+      <input class="field" id="newPin" type="password" inputmode="numeric" placeholder="New PIN">
+      <button class="ico" id="savePin">Change</button>
+      <p class="muted">At least 4 digits.</p>
+    </section>
+  </div>
+
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  // ------------------------------------------------------------------ settings
+  const LEVELS = {
+    C2: { cn: "中文二", en: "Chinese 2" },
+    C3: { cn: "中文三", en: "Chinese 3" },
+  };
+  const GRADED = ["Complexity of language", "Fluency", "Understanding", "No English"];
+  const MAX_SECONDS = 15 * 60;   // safety stop if a pair forgets to tap Stop
+
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem("oral." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { localStorage.setItem("oral." + k, JSON.stringify(v)); },
+  };
+  let hints = LS.get("hints", { C2: [], C3: [] });
+  let prepMinutes = LS.get("prepMinutes", 3);
+  let pin = LS.get("pin", "1121");
+
+  // One-time private setup link: #setup=<base64url JSON {C2:[...],C3:[...],prep?:n}>
+  (function readSetupLink() {
+    const m = location.hash.match(/^#setup=([A-Za-z0-9_-]+)/);
+    if (!m) return;
+    try {
+      const b64 = m[1].replace(/-/g, "+").replace(/_/g, "/");
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const data = JSON.parse(new TextDecoder().decode(bytes));
+      const clean = a => Array.isArray(a) ? a.map(String).filter(s => s.trim()) : [];
+      hints = { C2: clean(data.C2), C3: clean(data.C3) };
+      LS.set("hints", hints);
+      if (Number.isInteger(data.prep) && data.prep > 0) { prepMinutes = data.prep; LS.set("prepMinutes", prepMinutes); }
+    } catch (e) { console.warn("setup link unreadable", e); }
+    history.replaceState(null, "", location.pathname);
+  })();
+
+  // ------------------------------------------------------------------ storage (IndexedDB)
+  // "recs": finished recordings. "chunks": pieces of the one in progress, so a reload loses nothing.
+  let dbp = null;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      const r = indexedDB.open("oral-exam", 1);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        d.createObjectStore("recs", { keyPath: "id" });
+        d.createObjectStore("chunks", { autoIncrement: true }).createIndex("rid", "rid");
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function tx(store, mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction(store, mode);
+      let out;
+      Promise.resolve(fn(t.objectStore(store))).then(v => { out = v; });
+      t.oncomplete = () => res(out);
+      t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error);
+    });
+  }
+  const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+  const putRec = rec => tx("recs", "readwrite", s => { s.put(rec); });
+  const allRecs = () => tx("recs", "readonly", s => req(s.getAll()));
+  const delRec = id => tx("recs", "readwrite", s => { s.delete(id); });
+  const addChunk = (rid, blob) => tx("chunks", "readwrite", s => { s.add({ rid, blob }); });
+  const allChunks = () => tx("chunks", "readonly", s => req(s.getAll()));
+  const clearChunks = () => tx("chunks", "readwrite", s => { s.clear(); });
+
+  // ------------------------------------------------------------------ GitHub backup
+  // Token and repo live only in this browser's localStorage, typed in by the teacher.
+  // Upload: PUT /repos/{repo}/contents/recordings/{yyyy-mm-dd}/{file}. The local copy is never deleted.
+  let ghRepo = LS.get("ghRepo", "mercyan/oral-exam-recordings");
+  let ghToken = LS.get("ghToken", "");
+  const GH_API = window.GH_API_OVERRIDE || "https://api.github.com";
+  const ghReady = () => !!(ghToken && /^[\w.-]+\/[\w.-]+$/.test(ghRepo));
+
+  function blobToBase64(blob) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result).split(",")[1] || "");
+      fr.onerror = () => rej(fr.error);
+      fr.readAsDataURL(blob);
+    });
+  }
+  async function ghFetch(path, opts = {}) {
+    return fetch(GH_API + path, {
+      ...opts,
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + ghToken,
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+  }
+  async function ghTest() {
+    const r = await ghFetch("/repos/" + ghRepo);
+    if (r.status === 401) return "The token was refused. Check it, or make a new one.";
+    if (r.status === 404) return "Repo not found, or this token cannot see it.";
+    if (!r.ok) return "GitHub answered " + r.status + ".";
+    const j = await r.json();
+    if (!j.private) return "Warning: this repo is PUBLIC. Use a private repo for student recordings.";
+    if (j.permissions && !j.permissions.push) return "This token can read the repo but not write to it.";
+    return "ok";
+  }
+
+  let uploading = false;
+  async function uploadRec(r) {
+    const day = new Date(r.date);
+    const folder = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
+    const file = fileOf(r).name;
+    const content = await blobToBase64(r.blob);
+    let path = "recordings/" + folder + "/" + file;
+    let res = await ghFetch("/repos/" + ghRepo + "/contents/" + path.split("/").map(encodeURIComponent).join("/"), {
+      method: "PUT",
+      body: JSON.stringify({ message: "Oral exam: " + r.name, content }),
+    });
+    if (res.status === 422) {   // a file with that name is already there: keep both
+      path = path.replace(/(\.\w+)$/, "_" + r.id.slice(-4) + "$1");
+      res = await ghFetch("/repos/" + ghRepo + "/contents/" + path.split("/").map(encodeURIComponent).join("/"), {
+        method: "PUT",
+        body: JSON.stringify({ message: "Oral exam: " + r.name, content }),
+      });
+    }
+    if (!res.ok) throw new Error("GitHub " + res.status);
+    return path;
+  }
+  // Back up every recording not yet on GitHub. Safe to call often; runs one pass at a time.
+  async function backupPending() {
+    if (!ghReady() || uploading || !navigator.onLine) return { done: 0, failed: 0 };
+    uploading = true;
+    let done = 0, failed = 0;
+    try {
+      const recs = (await allRecs()).filter(r => !r.ghPath).sort((a, b) => a.date - b.date);
+      for (const r of recs) {
+        try {
+          const path = await uploadRec(r);
+          await putRec({ ...r, ghPath: path, ghError: null });
+          done++;
+        } catch (e) {
+          await putRec({ ...r, ghError: String(e.message || e) });
+          failed++;
+        }
+      }
+    } finally { uploading = false; }
+    return { done, failed };
+  }
+  window.addEventListener("online", () => backupPending());
+  setInterval(() => backupPending(), 60000);   // quiet retry every minute
+
+  // Recover a recording cut off by a reload or crash: its chunks are still stored.
+  async function recoverOrphans() {
+    try {
+      const chunks = await allChunks();
+      if (!chunks.length) return;
+      const meta = LS.get("current", null);
+      const byRid = {};
+      chunks.forEach(c => (byRid[c.rid] = byRid[c.rid] || []).push(c.blob));
+      for (const rid of Object.keys(byRid)) {
+        const m = meta && meta.id === rid ? meta : { id: rid, name: rid + "_recovered", level: "", names: [], date: Date.now(), mime: byRid[rid][0].type };
+        const blob = new Blob(byRid[rid], { type: m.mime || byRid[rid][0].type });
+        await putRec({ ...m, blob, size: blob.size, duration: null, interrupted: true });
+      }
+      await clearChunks();
+      LS.set("current", null);
+    } catch (e) { console.warn("recover failed", e); }
+  }
+
+  // ------------------------------------------------------------------ helpers
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const clock = t => { const s = Math.max(0, Math.floor(t)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const cleanName = s => (s.trim().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "")) || "student";
+
+  function show(id) {
+    document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id));
+    window.scrollTo(0, 0);
+  }
+
+  let level = "C2";
+  const names = () => [$("n1").value, $("n2").value].map(s => s.trim()).filter(Boolean);
+
+  function renderCard() {
+    const L = LEVELS[level];
+    const list = (hints[level] || []).map(h => "<li>" + esc(h) + "</li>").join("");
+    const html =
+      '<div class="card">' +
+      '<div class="t">口试 · ' + L.cn + '<span>Oral Exam · ' + L.en + '</span></div>' +
+      '<p class="lead">Have a conversation following the hints.</p>' +
+      '<ol>' + list + '</ol>' +
+      '<p>You have ' + prepMinutes + ' minute' + (prepMinutes === 1 ? "" : "s") + ' to discuss with your partner and practice. Then hit record.</p>' +
+      '<p class="g">You will be graded on:</p><p>' + GRADED.join(" &nbsp;·&nbsp; ") + '</p>' +
+      '</div>';
+    document.querySelectorAll("[data-card]").forEach(el => { el.innerHTML = html; });
+    document.querySelectorAll("[data-pair]").forEach(el => { el.textContent = names().join(" & "); });
+  }
+
+  function refreshSetup() {
+    const hasCards = (hints[level] || []).length > 0;
+    $("noCards").hidden = hasCards;
+    $("start").disabled = names().length < 2 || !hasCards || !canRecord;
+  }
+
+  // Keep the screen awake while a pair is working.
+  let wake = null;
+  async function stayAwake(on) {
+    try {
+      if (on && "wakeLock" in navigator && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); }
+      if (!on && wake) { await wake.release(); wake = null; }
+    } catch { /* not supported or refused: fine */ }
+  }
+
+  // ------------------------------------------------------------------ microphone
+  const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  $("noSupport").hidden = canRecord;
+
+  function pickMime() {
+    for (const t of ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm"]) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return "";
+  }
+  const extFor = mime => mime.includes("mp4") ? "m4a" : mime.includes("webm") ? "webm" : "audio";
+
+  let stream = null;
+  async function getMic() {
+    if (stream && stream.getAudioTracks().some(t => t.readyState === "live")) return stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+      $("noMic").hidden = true;
+      return stream;
+    } catch (e) {
+      console.warn(e);
+      $("noMic").hidden = false;
+      show("s-setup");
+      return null;
+    }
+  }
+
+  // ------------------------------------------------------------------ practice timer
+  let prepTimer = null;
+  function startPrep() {
+    renderCard();
+    show("s-prep");
+    stayAwake(true);
+    const ends = Date.now() + prepMinutes * 60000;
+    const tick = () => {
+      const left = (ends - Date.now()) / 1000;
+      $("prepClock").textContent = clock(Math.ceil(left));
+      if (left <= 0) { stopPrep(); show("s-ready"); }
+    };
+    tick();
+    prepTimer = setInterval(tick, 250);
+  }
+  function stopPrep() { clearInterval(prepTimer); prepTimer = null; }
+
+  // ------------------------------------------------------------------ recording
+  let rec = null, cur = null, recTimer = null, audioCtx = null, analyser = null, startedAt = 0, pending = Promise.resolve();
+
+  async function startRecording() {
+    const s = await getMic();
+    if (!s) return;
+    const mime = pickMime();
+    const d = new Date();
+    const stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") +
+      "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+    const base = [stamp, level, ...names().map(cleanName)].join("_");
+    cur = { id: base + "_" + Math.random().toString(36).slice(2, 6), name: base, level, names: names(), date: d.getTime(), mime: mime || "audio/mp4" };
+    LS.set("current", cur);
+
+    try {
+      rec = mime ? new MediaRecorder(s, { mimeType: mime }) : new MediaRecorder(s);
+    } catch (e) {
+      alert("Could not start recording. Ask your teacher.");
+      return;
+    }
+    cur.mime = rec.mimeType || cur.mime;
+    LS.set("current", cur);
+    const rid = cur.id;
+    rec.ondataavailable = ev => {
+      if (ev.data && ev.data.size) pending = pending.then(() => addChunk(rid, ev.data)).catch(err => console.warn(err));
+    };
+    rec.onstop = () => finish(false);
+    rec.start(1000);   // a chunk every second goes straight to storage
+    startedAt = Date.now();
+
+    // level meter
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      const src = audioCtx.createMediaStreamSource(s);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      src.connect(analyser);
+    } catch { analyser = null; }
+    const buf = new Uint8Array(512);
+    recTimer = setInterval(() => {
+      const t = (Date.now() - startedAt) / 1000;
+      $("recClock").textContent = clock(t);
+      if (analyser) {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (const v of buf) { const x = (v - 128) / 128; sum += x * x; }
+        const rms = Math.sqrt(sum / buf.length);
+        $("meter").style.width = Math.min(100, rms * 400) + "%";
+      }
+      if (t >= MAX_SECONDS) stopRecording(false);
+    }, 100);
+
+    renderCard();
+    show("s-rec");
+    stayAwake(true);
+  }
+
+  let interruptedFlag = false;
+  function stopRecording(interrupted) {
+    interruptedFlag = interrupted;
+    clearInterval(recTimer); recTimer = null;
+    $("meter").style.width = "0";
+    if (rec && rec.state !== "inactive") rec.stop();   // fires onstop → finish
+  }
+
+  async function finish() {
+    const meta = cur; const r = rec;
+    rec = null;
+    if (!meta) return;
+    const duration = (Date.now() - startedAt) / 1000;
+    await pending;                      // wait for the last chunk to land
+    try {
+      const chunks = (await allChunks()).filter(c => c.rid === meta.id).map(c => c.blob);
+      const blob = new Blob(chunks, { type: meta.mime });
+      await putRec({ ...meta, blob, size: blob.size, duration, interrupted: interruptedFlag });
+      await clearChunks();
+      LS.set("current", null);
+    } catch (e) {
+      console.warn(e);
+      alert("Saving failed. Do not close this page. Ask your teacher.");
+      return;
+    }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    cur = null;
+    $("doneWarn").hidden = !interruptedFlag;
+    show("s-done");
+    backupPending();   // in the background; students never wait on it
+    stayAwake(false);
+  }
+
+  // Leaving the page mid-recording (home button, lock): stop and keep what was said.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && rec && rec.state === "recording") stopRecording(true);
+  });
+  window.addEventListener("pagehide", () => {
+    if (rec && rec.state === "recording") { try { rec.requestData(); } catch {} }
+  });
+
+  // ------------------------------------------------------------------ teacher screen
+  let urls = [];
+  function fileOf(r) {
+    return new File([r.blob], r.name + "." + extFor(r.mime || ""), { type: r.mime || "audio/mp4" });
+  }
+  async function saveFiles(files) {
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    for (const f of files) {       // fallback: download links
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(f); a.download = f.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }
+  }
+
+  async function renderTeacher() {
+    urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+    const recs = (await allRecs()).sort((a, b) => b.date - a.date);
+    $("recCount").textContent = "Recordings (" + recs.length + ")";
+    $("shareAll").hidden = !recs.length;
+    const list = $("recList");
+    list.innerHTML = recs.length ? "" : '<p class="muted">No recordings yet.</p>';
+    for (const r of recs) {
+      const row = document.createElement("div");
+      row.className = "recrow";
+      const nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = r.name;
+      const sub = document.createElement("small");
+      const kb = Math.round((r.size || r.blob.size) / 1024);
+      sub.textContent = (r.duration ? clock(r.duration) + " · " : "") + kb + " KB" + (r.interrupted ? " · stopped early" : "") +
+        (r.ghPath ? " · ☁︎ on GitHub" : ghReady() ? " · not backed up yet" + (r.ghError ? " (" + r.ghError + ")" : "") : "");
+      nm.appendChild(sub);
+      const play = Object.assign(document.createElement("button"), { className: "ico", textContent: "▶ Play" });
+      play.onclick = () => {
+        const u = URL.createObjectURL(r.blob); urls.push(u);
+        const p = $("player"); p.hidden = false; p.src = u; p.play();
+      };
+      const save = Object.assign(document.createElement("button"), { className: "ico", textContent: "Save" });
+      save.onclick = () => saveFiles([fileOf(r)]);
+      const del = Object.assign(document.createElement("button"), { className: "ico del", textContent: "Delete" });
+      del.onclick = async () => {
+        if (!confirm("Delete " + r.name + "?\nThis cannot be undone.")) return;
+        await delRec(r.id); renderTeacher();
+      };
+      row.append(nm, play, save, del);
+      list.appendChild(row);
+    }
+    $("shareAll").onclick = () => saveFiles(recs.map(fileOf));
+
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const e = await navigator.storage.estimate();
+        $("storageInfo").textContent = "Using " + Math.round((e.usage || 0) / 1048576) + " MB.";
+      }
+    } catch {}
+
+    // card editors
+    const box = $("cardsBox");
+    box.innerHTML = "";
+    for (const lv of Object.keys(LEVELS)) {
+      const h = document.createElement("h3");
+      h.textContent = "Card · " + LEVELS[lv].cn + " " + LEVELS[lv].en;
+      box.appendChild(h);
+      const arr = hints[lv] = hints[lv] || [];
+      arr.forEach((text, i) => {
+        const row = document.createElement("div"); row.className = "hintrow";
+        const b = document.createElement("b"); b.textContent = (i + 1) + ".";
+        const ta = document.createElement("textarea"); ta.value = text;
+        ta.oninput = () => { arr[i] = ta.value; LS.set("hints", hints); };
+        const x = Object.assign(document.createElement("button"), { className: "ico del", textContent: "✕" });
+        x.onclick = () => { arr.splice(i, 1); LS.set("hints", hints); renderTeacher(); };
+        row.append(b, ta, x);
+        box.appendChild(row);
+      });
+      const add = Object.assign(document.createElement("button"), { className: "ico", textContent: "+ Add a hint" });
+      add.onclick = () => { arr.push(""); LS.set("hints", hints); renderTeacher(); };
+      add.style.marginBottom = "18px";
+      box.appendChild(add);
+    }
+    $("prepMin").value = prepMinutes;
+    $("ghRepo").value = ghRepo;
+    $("ghToken").value = "";
+    $("ghTokenState").textContent = ghToken ? "(saved on this iPad)" : "(none yet)";
+  }
+
+  $("ghSave").addEventListener("click", async () => {
+    const repo = $("ghRepo").value.trim();
+    const tok = $("ghToken").value.trim();
+    if (repo) { ghRepo = repo; LS.set("ghRepo", repo); }
+    if (tok) { ghToken = tok; LS.set("ghToken", tok); }
+    if (!ghReady()) { $("ghStatus").textContent = "Add the repo (owner/name) and a token."; return; }
+    $("ghStatus").textContent = "Testing…";
+    try {
+      const t = await ghTest();
+      if (t !== "ok") { $("ghStatus").textContent = t; return; }
+      $("ghStatus").textContent = "Connected. Backing up…";
+      const { done, failed } = await backupPending();
+      $("ghStatus").textContent = "Connected to " + ghRepo + ". Backed up " + done + (failed ? ", " + failed + " failed (will retry)" : "") + ".";
+    } catch (e) {
+      $("ghStatus").textContent = "Could not reach GitHub. Check the Wi-Fi.";
+    }
+    renderTeacher();
+  });
+  $("ghRetry").addEventListener("click", async () => {
+    if (!ghReady()) { $("ghStatus").textContent = "Add the repo and a token first."; return; }
+    $("ghStatus").textContent = "Backing up…";
+    const { done, failed } = await backupPending();
+    $("ghStatus").textContent = "Backed up " + done + (failed ? ", " + failed + " failed" : "") + ".";
+    renderTeacher();
+  });
+  $("ghClear").addEventListener("click", () => {
+    if (!confirm("Remove the GitHub token from this iPad? Backups stop until you add one again.")) return;
+    ghToken = ""; LS.set("ghToken", ""); $("ghStatus").textContent = "Token removed."; renderTeacher();
+  });
+
+  // ------------------------------------------------------------------ wiring
+  document.querySelectorAll("#levelSeg button").forEach(b => b.addEventListener("click", () => {
+    level = b.dataset.level;
+    document.querySelectorAll("#levelSeg button").forEach(x => x.classList.toggle("on", x === b));
+    refreshSetup();
+  }));
+  $("n1").addEventListener("input", refreshSetup);
+  $("n2").addEventListener("input", refreshSetup);
+
+  $("start").addEventListener("click", async () => {
+    // Ask for the mic now, inside the tap, so Safari shows its prompt here and not mid-exam.
+    const s = await getMic();
+    if (!s) return;
+    startPrep();
+  });
+  $("back").addEventListener("click", () => {
+    if (!confirm("Go back? Nothing has been recorded yet.")) return;
+    stopPrep(); stayAwake(false); show("s-setup");
+  });
+  $("early").addEventListener("click", () => { stopPrep(); show("s-ready"); });
+  $("record").addEventListener("click", startRecording);
+  $("stop").addEventListener("click", () => {
+    if (confirm("Finish and save?\nOnly stop when your conversation is finished.")) stopRecording(false);
+  });
+  $("next").addEventListener("click", () => {
+    $("n1").value = ""; $("n2").value = "";
+    refreshSetup(); show("s-setup");
+  });
+
+  $("gear").addEventListener("click", () => {
+    const p = prompt("Teacher PIN");
+    if (p === null) return;
+    if (p === pin) { renderTeacher(); show("s-teacher"); }
+    else alert("Wrong PIN.");
+  });
+  $("tDone").addEventListener("click", () => {
+    const p = $("player"); p.pause(); p.hidden = true;
+    hints = { C2: (hints.C2 || []).filter(s => s.trim()), C3: (hints.C3 || []).filter(s => s.trim()) };
+    LS.set("hints", hints);
+    const m = parseInt($("prepMin").value, 10);
+    if (m >= 1 && m <= 10) { prepMinutes = m; LS.set("prepMinutes", m); }
+    refreshSetup(); show("s-setup");
+  });
+  $("savePin").addEventListener("click", () => {
+    const v = $("newPin").value.trim();
+    if (!/^\d{4,}$/.test(v)) { alert("Use at least 4 digits."); return; }
+    pin = v; LS.set("pin", v); $("newPin").value = ""; alert("PIN changed.");
+  });
+
+  // Ask Safari not to clear this site's storage on its own.
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  recoverOrphans().then(() => { refreshSetup(); backupPending(); });
+  refreshSetup();
+})();
+</script>
+</body>
+</html>
