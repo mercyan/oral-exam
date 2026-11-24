@@ -110,6 +110,8 @@
   .ico.del { color: var(--red); }
   textarea { width: 100%; font-size: 17px; font-family: var(--sans); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); min-height: 64px; margin-bottom: 8px; }
   .hintrow { display: flex; gap: 8px; align-items: flex-start; }
+  .hintrow textarea { flex: 1; min-height: 96px; }
+  #cardsBox textarea { min-height: 84px; line-height: 1.35; }
   .hintrow b { padding-top: 12px; width: 22px; }
   .muted { color: var(--mute); font-size: 15px; line-height: 1.4; }
   .field { font-size: 18px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); width: 140px; }
@@ -184,7 +186,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 4 · louder mic</small></h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 6 · mic boost · editable card page</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -201,11 +203,21 @@
     </section>
 
     <section class="box">
+      <h3>Microphone boost</h3>
+      <select class="field" id="boostSel" style="width:auto">
+        <option value="1">Off (1×)</option><option value="4">Some (4×)</option>
+        <option value="8">Normal (8×)</option><option value="16">Strong (16×)</option>
+      </select>
+      <p class="muted">Makes quiet voices louder before saving. If test recordings sound distorted, pick a lower setting; if too quiet, a higher one.</p>
+    </section>
+
+    <section class="box">
       <h3>GitHub backup</h3>
       <p class="muted" style="margin-top:0">Each recording is copied to a private GitHub repo as soon as it is saved. The copy on this iPad stays too.</p>
       <p style="margin:8px 0 4px">Repo</p>
       <input class="field" id="ghRepo" style="width:100%" placeholder="mercyan/oral-exam-recordings" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <p style="margin:12px 0 4px">Access token <span class="muted" id="ghTokenState"></span></p>
+      <p style="margin:12px 0 4px">Access token</p>
+      <p id="ghTokenState" style="margin:0 0 8px;font-size:18px;font-weight:700"></p>
       <input class="field" id="ghToken" style="width:100%" type="password" placeholder="Paste a new token to replace" autocapitalize="off" autocorrect="off" spellcheck="false">
       <div class="row" style="justify-content:flex-start">
         <button class="ico" id="ghSave">Save and test</button>
@@ -234,8 +246,9 @@
     C2: { cn: "中文二", en: "Chinese 2" },
     C3: { cn: "中文三", en: "Chinese 3" },
   };
-  const GRADED = ["Complexity of language", "Fluency", "Understanding", "No English"];
   const MAX_SECONDS = 15 * 60;   // safety stop if a pair forgets to tap Stop
+  // Safari on the iPad hands over a quiet mic (test files peaked at 3 to 4% of full scale).
+  // The page boosts it before recording, with a limiter so loud voices do not distort.
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem("oral." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -253,10 +266,38 @@
       "Situation: one of you needs to borrow a car to pick up your sister. Talk about your plan to practice Chinese and improve.",
     ],
   };
+  // Everything else on the card page, per level. "{minutes}" becomes the practice-timer length.
+  const DEFAULT_PAGE = {
+    title: "口试 · {cn}",
+    subtitle: "Oral Exam · {en}",
+    lead: "Have a conversation following the hints.",
+    prep: "You have {minutes} minutes to discuss with your partner and practice. Then hit record.",
+    gradedHead: "You will be graded on:",
+    graded: "Complexity of language\nFluency\nUnderstanding\nNo English",
+  };
+  const PAGE_FIELDS = [
+    ["title", "Title", false], ["subtitle", "Subtitle", false], ["lead", "Opening line", true],
+    ["prep", "Practice line ({minutes} = timer length)", true], ["gradedHead", "Graded heading", false],
+    ["graded", "Graded on (one per line)", true],
+  ];
+  let pages = LS.get("pages", {});
+  function pageFor(lv) {
+    const L = LEVELS[lv], saved = pages[lv] || {}, out = {};
+    for (const [k] of PAGE_FIELDS) {
+      out[k] = (k in saved ? saved[k] : DEFAULT_PAGE[k]).replace(/\{cn\}/g, L.cn).replace(/\{en\}/g, L.en);
+    }
+    return out;
+  }
+  function setPageField(lv, k, v) {
+    pages[lv] = { ...(pages[lv] || {}), [k]: v };
+    LS.set("pages", pages);
+  }
+
   let hints = LS.get("hints", null) || DEFAULT_HINTS;
   if (!hints.C2 || !hints.C2.length) hints.C2 = DEFAULT_HINTS.C2.slice();
   if (!hints.C3 || !hints.C3.length) hints.C3 = DEFAULT_HINTS.C3.slice();
   let prepMinutes = LS.get("prepMinutes", 3);
+  let boost = LS.get("boost", 8);
   let pin = LS.get("pin", "1121");
 
   // One-time private setup link: #setup=<base64url JSON {C2:[...],C3:[...],prep?:n}>
@@ -427,15 +468,19 @@
   const names = () => [$("n1").value, $("n2").value].map(s => s.trim()).filter(Boolean);
 
   function renderCard() {
-    const L = LEVELS[level];
-    const list = (hints[level] || []).map(h => "<li>" + esc(h) + "</li>").join("");
+    const pg = pageFor(level);
+    const list = (hints[level] || []).filter(h => h.trim()).map(h => "<li>" + esc(h) + "</li>").join("");
+    const prep = pg.prep.replace(/\{minutes\}/g, String(prepMinutes))
+      .replace(/\b1 minutes\b/, "1 minute");
+    const graded = pg.graded.split("\n").map(x => x.trim()).filter(Boolean).map(esc).join(" &nbsp;·&nbsp; ");
     const html =
       '<div class="card">' +
-      '<div class="t">口试 · ' + L.cn + '<span>Oral Exam · ' + L.en + '</span></div>' +
-      '<p class="lead">Have a conversation following the hints.</p>' +
-      '<ol>' + list + '</ol>' +
-      '<p>You have ' + prepMinutes + ' minute' + (prepMinutes === 1 ? "" : "s") + ' to discuss with your partner and practice. Then hit record.</p>' +
-      '<p class="g">You will be graded on:</p><p>' + GRADED.join(" &nbsp;·&nbsp; ") + '</p>' +
+      (pg.title || pg.subtitle ? '<div class="t">' + esc(pg.title) + '<span>' + esc(pg.subtitle) + '</span></div>' : '') +
+      (pg.lead.trim() ? '<p class="lead">' + esc(pg.lead) + '</p>' : '') +
+      (list ? '<ol>' + list + '</ol>' : '') +
+      (prep.trim() ? '<p>' + esc(prep) + '</p>' : '') +
+      (pg.gradedHead.trim() ? '<p class="g">' + esc(pg.gradedHead) + '</p>' : '') +
+      (graded ? '<p>' + graded + '</p>' : '') +
       '</div>';
     document.querySelectorAll("[data-card]").forEach(el => { el.innerHTML = html; });
     document.querySelectorAll("[data-pair]").forEach(el => { el.textContent = names().join(" & "); });
@@ -503,6 +548,7 @@
   function stopPrep() { clearInterval(prepTimer); prepTimer = null; }
 
   // ------------------------------------------------------------------ recording
+  let graph = [];
   let rec = null, cur = null, recTimer = null, audioCtx = null, analyser = null, startedAt = 0, pending = Promise.resolve();
 
   async function startRecording() {
@@ -516,11 +562,32 @@
     cur = { id: base + "_" + Math.random().toString(36).slice(2, 6), name: base, level, names: names(), date: d.getTime(), mime: mime || "audio/mp4" };
     LS.set("current", cur);
 
+    // Mic → boost → limiter → recorder. Falls back to the plain mic if Web Audio is unavailable.
+    let recStream = s;
+    analyser = null;
     try {
-      rec = mime ? new MediaRecorder(s, { mimeType: mime }) : new MediaRecorder(s);
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      const src = audioCtx.createMediaStreamSource(s);
+      const gain = audioCtx.createGain();
+      gain.gain.value = boost;
+      const lim = audioCtx.createDynamicsCompressor();
+      lim.threshold.value = -10; lim.knee.value = 0; lim.ratio.value = 20;
+      lim.attack.value = 0.003; lim.release.value = 0.25;
+      const dest = audioCtx.createMediaStreamDestination();
+      src.connect(gain); gain.connect(lim); lim.connect(dest);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      lim.connect(analyser);
+      graph = [src, gain, lim];
+      if (audioCtx.state === "running" && boost !== 1) recStream = dest.stream;
+    } catch (e) { console.warn("boost unavailable", e); }
+
+    try {
+      rec = mime ? new MediaRecorder(recStream, { mimeType: mime }) : new MediaRecorder(recStream);
     } catch (e) {
-      alert("Could not start recording. Ask your teacher.");
-      return;
+      try { rec = new MediaRecorder(s); }
+      catch { alert("Could not start recording. Ask your teacher."); return; }
     }
     cur.mime = rec.mimeType || cur.mime;
     LS.set("current", cur);
@@ -532,15 +599,6 @@
     rec.start(1000);   // a chunk every second goes straight to storage
     startedAt = Date.now();
 
-    // level meter
-    try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === "suspended") await audioCtx.resume();
-      const src = audioCtx.createMediaStreamSource(s);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
-    } catch { analyser = null; }
     const buf = new Uint8Array(512);
     recTimer = setInterval(() => {
       const t = (Date.now() - startedAt) / 1000;
@@ -550,7 +608,7 @@
         let sum = 0;
         for (const v of buf) { const x = (v - 128) / 128; sum += x * x; }
         const rms = Math.sqrt(sum / buf.length);
-        $("meter").style.width = Math.min(100, rms * 400) + "%";
+        $("meter").style.width = Math.min(100, rms * 250) + "%";
       }
       if (t >= MAX_SECONDS) stopRecording(false);
     }, 100);
@@ -585,6 +643,7 @@
       alert("Saving failed. Do not close this page. Ask your teacher.");
       return;
     }
+    graph.forEach(n => { try { n.disconnect(); } catch {} }); graph = [];
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     cur = null;
     $("doneWarn").hidden = !interruptedFlag;
@@ -664,10 +723,23 @@
     // card editors
     const box = $("cardsBox");
     box.innerHTML = "";
+    const fieldEditor = (lv, k, label, multi) => {
+      const lab = document.createElement("p");
+      lab.className = "muted"; lab.style.margin = "10px 0 4px"; lab.textContent = label;
+      const el = document.createElement(multi ? "textarea" : "input");
+      if (!multi) { el.className = "field"; el.style.width = "100%"; }
+      el.value = pageFor(lv)[k];
+      el.oninput = () => setPageField(lv, k, el.value);
+      box.append(lab, el);
+    };
     for (const lv of Object.keys(LEVELS)) {
       const h = document.createElement("h3");
-      h.textContent = "Card · " + LEVELS[lv].cn + " " + LEVELS[lv].en;
+      h.textContent = "Card page · " + LEVELS[lv].cn + " " + LEVELS[lv].en;
       box.appendChild(h);
+      for (const [k, label, multi] of PAGE_FIELDS.slice(0, 3)) fieldEditor(lv, k, label, multi);
+      const hl = document.createElement("p");
+      hl.className = "muted"; hl.style.margin = "10px 0 4px"; hl.textContent = "Hints";
+      box.appendChild(hl);
       const arr = hints[lv] = hints[lv] || [];
       arr.forEach((text, i) => {
         const row = document.createElement("div"); row.className = "hintrow";
@@ -681,13 +753,23 @@
       });
       const add = Object.assign(document.createElement("button"), { className: "ico", textContent: "+ Add a hint" });
       add.onclick = () => { arr.push(""); LS.set("hints", hints); renderTeacher(); };
-      add.style.marginBottom = "18px";
       box.appendChild(add);
+      for (const [k, label, multi] of PAGE_FIELDS.slice(3)) fieldEditor(lv, k, label, multi);
+      const reset = Object.assign(document.createElement("button"), { className: "ico del", textContent: "Reset this card page to the original" });
+      reset.style.margin = "12px 0 26px";
+      reset.onclick = () => {
+        if (!confirm("Put this card page back to the original text?")) return;
+        delete pages[lv]; LS.set("pages", pages);
+        hints[lv] = DEFAULT_HINTS[lv].slice(); LS.set("hints", hints);
+        renderTeacher();
+      };
+      box.appendChild(reset);
     }
     $("prepMin").value = prepMinutes;
+    $("boostSel").value = String(boost);
     $("ghRepo").value = ghRepo;
     $("ghToken").value = "";
-    $("ghTokenState").textContent = ghToken ? "(saved on this iPad)" : "(none yet)";
+    showTokenState();
   }
 
   $("ghSave").addEventListener("click", async () => {
@@ -708,6 +790,11 @@
     }
     renderTeacher();
   });
+  function showTokenState() {
+    const el = $("ghTokenState");
+    if (ghToken) { el.textContent = "✓ Token saved, ends in …" + ghToken.slice(-4) + ". The box stays empty on purpose."; el.style.color = "var(--green)"; }
+    else { el.textContent = "✗ No token on this iPad yet. Paste it below."; el.style.color = "var(--red)"; }
+  }
   // A pasted token or repo is kept at once, even if Save and test is never tapped.
   function keepGhFields() {
     const repo = $("ghRepo").value.trim();
@@ -715,7 +802,7 @@
     if (repo && repo !== ghRepo) { ghRepo = repo; LS.set("ghRepo", repo); }
     if (tok && tok !== ghToken) {
       ghToken = tok; LS.set("ghToken", tok);
-      $("ghTokenState").textContent = "(saved on this iPad)";
+      showTokenState();
     }
   }
   $("ghToken").addEventListener("input", keepGhFields);
@@ -773,6 +860,8 @@
     const p = $("player"); p.pause(); p.hidden = true;
     hints = { C2: (hints.C2 || []).filter(s => s.trim()), C3: (hints.C3 || []).filter(s => s.trim()) };
     LS.set("hints", hints);
+    const bv = parseInt($("boostSel").value, 10);
+    if ([1, 4, 8, 16].includes(bv)) { boost = bv; LS.set("boost", bv); }
     const m = parseInt($("prepMin").value, 10);
     if (m >= 1 && m <= 10) { prepMinutes = m; LS.set("prepMinutes", m); }
     keepGhFields();
