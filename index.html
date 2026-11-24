@@ -12,8 +12,8 @@
 <!--
   Oral exam recorder, Chinese 2 + 3 (Santa Fe College). One iPad, pairs record on their own.
   Recordings live only in this browser's storage on the device (IndexedDB). Nothing is uploaded.
-  The page ships with NO card text: the teacher loads cards once from a private #setup= link
-  (the hash never reaches the server) or types them in the teacher screen.
+  The cards are built in (DEFAULT_HINTS). The teacher screen can edit them on the device, and a
+  #setup= link (base64url JSON) can still replace them.
 -->
 <style>
   :root {
@@ -241,7 +241,21 @@
     get(k, d) { try { const v = localStorage.getItem("oral." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { localStorage.setItem("oral." + k, JSON.stringify(v)); },
   };
-  let hints = LS.get("hints", { C2: [], C3: [] });
+  // The cards (Mercy's text, Nov 24 2026). Edits made in the teacher screen are kept on the device
+  // and override these. Deleting every hint for a level brings that level's card back on reload.
+  const DEFAULT_HINTS = {
+    C2: [
+      "Ask each other where you live, whether your room is big, and whether you have roommates or who you live with.",
+      "Then ask each other what you plan to do after Chinese class. Ask what cuisine your partner likes, and make a plan to have a meal together.",
+    ],
+    C3: [
+      "One of you is the server, the other is the customer. Order food and drinks.",
+      "Situation: one of you needs to borrow a car to pick up your sister. Talk about your plan to practice Chinese and improve.",
+    ],
+  };
+  let hints = LS.get("hints", null) || DEFAULT_HINTS;
+  if (!hints.C2 || !hints.C2.length) hints.C2 = DEFAULT_HINTS.C2.slice();
+  if (!hints.C3 || !hints.C3.length) hints.C3 = DEFAULT_HINTS.C3.slice();
   let prepMinutes = LS.get("prepMinutes", 3);
   let pin = LS.get("pin", "1121");
 
