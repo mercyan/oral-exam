@@ -186,7 +186,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 6 · mic boost · editable card page</small></h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 7 · card text backs up to GitHub</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -431,6 +431,20 @@
       }
     } finally { uploading = false; }
     return { done, failed };
+  }
+  // Copy the card text to the private repo (settings/card-text.json) so it survives a lost iPad
+  // and can be read back as the new defaults. No token or PIN is ever included.
+  async function backupSettings() {
+    if (!ghReady() || !navigator.onLine) return;
+    try {
+      const path = "/repos/" + ghRepo + "/contents/settings/card-text.json";
+      const body = { hints, pages, prepMinutes, boost, saved: new Date().toISOString(), version: 7 };
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(body, null, 2))));
+      let sha;
+      const g = await ghFetch(path);
+      if (g.ok) sha = (await g.json()).sha;
+      await ghFetch(path, { method: "PUT", body: JSON.stringify({ message: "Card text from the iPad", content, ...(sha ? { sha } : {}) }) });
+    } catch (e) { console.warn("settings backup failed", e); }
   }
   window.addEventListener("online", () => backupPending());
   setInterval(() => backupPending(), 60000);   // quiet retry every minute
@@ -866,7 +880,7 @@
     if (m >= 1 && m <= 10) { prepMinutes = m; LS.set("prepMinutes", m); }
     keepGhFields();
     refreshSetup(); show("s-setup");
-    backupPending();
+    backupPending(); backupSettings();
   });
   $("savePin").addEventListener("click", () => {
     const v = $("newPin").value.trim();
