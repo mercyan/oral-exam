@@ -72,7 +72,9 @@
   .card { background: var(--card); border-radius: 20px; padding: 26px 28px; border: 1px solid var(--line); }
   .card .t { font-family: var(--serif); font-size: 30px; font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 16px; }
   .card .t span { color: var(--mute); font-size: 22px; margin-left: 8px; }
-  .card .lead { font-size: 24px; font-weight: 700; margin: 0 0 14px; white-space: pre-line; }
+  .card .lead { font-size: 22px; margin: 0 0 14px; line-height: 1.45; white-space: pre-line; }
+  .card.intro { margin: 4px 0 22px; }
+  .card.intro .lead { font-size: 21px; }
   .card ol { margin: 0 0 16px; padding-left: 34px; font-size: 24px; line-height: 1.4; }
   .card ol li { margin-bottom: 10px; padding-left: 4px; }
   .card p { font-size: 20px; margin: 10px 0 0; line-height: 1.4; }
@@ -131,6 +133,8 @@
     <div class="notice" id="noMic" hidden><b>The microphone is blocked.</b> Teacher: in Settings → Apps → Safari → Microphone, choose Ask or Allow. Then reload this page.</div>
     <div class="notice" id="noSupport" hidden><b>This browser cannot record.</b> Open this page in Safari on the iPad.</div>
 
+    <div class="card intro" id="intro" hidden></div>
+
     <label class="h">Your class</label>
     <div class="seg" id="levelSeg">
       <button data-level="C2" class="on">中文二 &nbsp;Chinese 2</button>
@@ -186,7 +190,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 8 · Mercy's card text is the default</small></h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 9 · opening and rubric on the home page</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -270,18 +274,15 @@
   const DEFAULT_PAGE = {
     title: "口试 · {cn}",
     subtitle: "Oral Exam · {en}",
-    lead: "Have a conversation following the hints.",
+    lead: "Two hints will appear on the screen. You will have {minutes} minutes to prepare with your partner.\n\nThen record your conversation for one to two minutes. You only get one chance to record, so make sure you complete both hints in that one recording.\n\nDon't worry about moving from one hint to the next. Just keep talking. Feel free to improvise, as long as you finish both tasks.",
     prep: "You have {minutes} minutes to discuss with your partner and practice. Then hit record.",
     gradedHead: "You will be graded on:",
-    graded: "Complexity of language\nComplete the tasks\nFluency\nPronunciation\nNo English",
+    graded: "Complete the tasks\nFluency\nComplexity of language\nPronunciation\nNo English",
   };
-  // Where a level's default differs from the shared one above (Mercy's edits, Nov 24 2026).
-  const LEVEL_PAGE = {
-    C2: { lead: "Have a conversation following the hints. Make sure you complete both tasks. The rest you can improvise. Record for one to two minutes." },
-    C3: { lead: "Have a conversation following the hints. After you hit record, complete both tasks in one recording in one to two minutes.\nFeel free to improvise. Try your best to make the conversation as rich as possible." },
-  };
+  // Where a level's default differs from the shared one above. Both levels share it now.
+  const LEVEL_PAGE = {};
   const PAGE_FIELDS = [
-    ["title", "Title", false], ["subtitle", "Subtitle", false], ["lead", "Opening line", true],
+    ["title", "Title", false], ["subtitle", "Subtitle", false], ["lead", "Opening (home page and card; {minutes} = timer length)", true],
     ["prep", "Practice line ({minutes} = timer length)", true], ["gradedHead", "Graded heading", false],
     ["graded", "Graded on (one per line)", true],
   ];
@@ -486,16 +487,29 @@
   let level = "C2";
   const names = () => [$("n1").value, $("n2").value].map(s => s.trim()).filter(Boolean);
 
+  const NUMWORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const leadText = pg => pg.lead.replace(/\{minutes\}/g, NUMWORDS[prepMinutes] || String(prepMinutes))
+    .replace(/\bone minutes\b/, "one minute");
+  const gradedHTML = pg => pg.graded.split("\n").map(x => x.trim()).filter(Boolean).map(esc).join("&nbsp; ·&nbsp; ");
+  // Home page: the same opening and rubric as the card, for the level currently picked.
+  function renderIntro() {
+    const pg = pageFor(level), g = gradedHTML(pg);
+    $("intro").innerHTML =
+      (pg.lead.trim() ? '<p class="lead">' + esc(leadText(pg)) + '</p>' : '') +
+      (pg.gradedHead.trim() ? '<p class="g">' + esc(pg.gradedHead) + '</p>' : '') +
+      (g ? '<p>' + g + '</p>' : '');
+    $("intro").hidden = !$("intro").innerHTML;
+  }
   function renderCard() {
     const pg = pageFor(level);
     const list = (hints[level] || []).filter(h => h.trim()).map(h => "<li>" + esc(h) + "</li>").join("");
     const prep = pg.prep.replace(/\{minutes\}/g, String(prepMinutes))
       .replace(/\b1 minutes\b/, "1 minute");
-    const graded = pg.graded.split("\n").map(x => x.trim()).filter(Boolean).map(esc).join(" &nbsp;·&nbsp; ");
+    const graded = gradedHTML(pg);
     const html =
       '<div class="card">' +
       (pg.title || pg.subtitle ? '<div class="t">' + esc(pg.title) + '<span>' + esc(pg.subtitle) + '</span></div>' : '') +
-      (pg.lead.trim() ? '<p class="lead">' + esc(pg.lead) + '</p>' : '') +
+      (pg.lead.trim() ? '<p class="lead">' + esc(leadText(pg)) + '</p>' : '') +
       (list ? '<ol>' + list + '</ol>' : '') +
       (prep.trim() ? '<p>' + esc(prep) + '</p>' : '') +
       (pg.gradedHead.trim() ? '<p class="g">' + esc(pg.gradedHead) + '</p>' : '') +
@@ -506,6 +520,7 @@
   }
 
   function refreshSetup() {
+    renderIntro();
     const hasCards = (hints[level] || []).length > 0;
     $("noCards").hidden = hasCards;
     $("start").disabled = names().length < 2 || !hasCards || !canRecord;
