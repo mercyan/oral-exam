@@ -190,7 +190,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 9 · opening and rubric on the home page</small></h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 10 · updates itself</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -444,7 +444,7 @@
     if (!ghReady() || !navigator.onLine) return;
     try {
       const path = "/repos/" + ghRepo + "/contents/settings/card-text.json";
-      const body = { hints, pages, prepMinutes, boost, saved: new Date().toISOString(), version: 7 };
+      const body = { hints, pages, prepMinutes, boost, saved: new Date().toISOString(), version: APP_VERSION };
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(body, null, 2))));
       let sha;
       const g = await ghFetch(path);
@@ -487,6 +487,22 @@
   let level = "C2";
   const names = () => [$("n1").value, $("n2").value].map(s => s.trim()).filter(Boolean);
 
+  // Never run an old copy: when a newer version is online, reload into it (only on the home
+  // screen, never in the teacher screen, mid-practice or mid-recording).
+  const APP_VERSION = 10;
+  async function checkForUpdate() {
+    try {
+      if (!navigator.onLine) return;
+      const onSafeScreen = $("s-setup").classList.contains("on") && !$("n1").value && !$("n2").value;
+      if (!onSafeScreen) return;
+      const r = await fetch(location.pathname + "?check=" + Date.now(), { cache: "no-store" });
+      const m = (await r.text()).match(/const APP_VERSION = (\d+);/);
+      if (m && +m[1] > APP_VERSION) location.replace(location.pathname + "?v=" + m[1] + location.hash);
+    } catch { /* offline or blocked: keep the copy we have */ }
+  }
+  checkForUpdate();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkForUpdate(); });
+  setInterval(checkForUpdate, 5 * 60000);
   const NUMWORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   const leadText = pg => pg.lead.replace(/\{minutes\}/g, NUMWORDS[prepMinutes] || String(prepMinutes))
     .replace(/\bone minutes\b/, "one minute");
