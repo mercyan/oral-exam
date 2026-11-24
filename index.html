@@ -706,6 +706,20 @@
     }
     renderTeacher();
   });
+  // A pasted token or repo is kept at once, even if Save and test is never tapped.
+  function keepGhFields() {
+    const repo = $("ghRepo").value.trim();
+    const tok = $("ghToken").value.trim();
+    if (repo && repo !== ghRepo) { ghRepo = repo; LS.set("ghRepo", repo); }
+    if (tok && tok !== ghToken) {
+      ghToken = tok; LS.set("ghToken", tok);
+      $("ghTokenState").textContent = "(saved on this iPad)";
+    }
+  }
+  $("ghToken").addEventListener("input", keepGhFields);
+  $("ghToken").addEventListener("change", keepGhFields);
+  $("ghRepo").addEventListener("change", keepGhFields);
+
   $("ghRetry").addEventListener("click", async () => {
     if (!ghReady()) { $("ghStatus").textContent = "Add the repo and a token first."; return; }
     $("ghStatus").textContent = "Backing up…";
@@ -759,7 +773,9 @@
     LS.set("hints", hints);
     const m = parseInt($("prepMin").value, 10);
     if (m >= 1 && m <= 10) { prepMinutes = m; LS.set("prepMinutes", m); }
+    keepGhFields();
     refreshSetup(); show("s-setup");
+    backupPending();
   });
   $("savePin").addEventListener("click", () => {
     const v = $("newPin").value.trim();
