@@ -184,7 +184,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher</h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 4 · louder mic</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -472,7 +472,9 @@
   async function getMic() {
     if (stream && stream.getAudioTracks().some(t => t.readyState === "live")) return stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+      // Plain { audio: true }: on the iPad this keeps Apple's voice processing and automatic gain on.
+      // Turning echoCancellation off made Safari hand over the raw mic, about 4% of full volume.
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       $("noMic").hidden = true;
       return stream;
     } catch (e) {
