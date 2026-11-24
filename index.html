@@ -190,7 +190,7 @@
 
   <!-- teacher -->
   <div class="screen" id="s-teacher">
-    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 10 · updates itself</small></h2><button class="small" id="tDone">Done</button></div>
+    <div class="t-head"><h2>Teacher <small class="muted" style="font-weight:400">version 11 · one shared home page</small></h2><button class="small" id="tDone">Done</button></div>
 
     <section class="box">
       <h3><span id="recCount">Recordings</span><button class="ico" id="shareAll">Save all</button></h3>
@@ -282,19 +282,29 @@
   // Where a level's default differs from the shared one above. Both levels share it now.
   const LEVEL_PAGE = {};
   const PAGE_FIELDS = [
-    ["title", "Title", false], ["subtitle", "Subtitle", false], ["lead", "Opening (home page and card; {minutes} = timer length)", true],
+    ["title", "Title", false], ["subtitle", "Subtitle", false], ["lead", "Opening ({minutes} = timer length)", true],
     ["prep", "Practice line ({minutes} = timer length)", true], ["gradedHead", "Graded heading", false],
     ["graded", "Graded on (one per line)", true],
   ];
+  // The opening and the rubric are one shared text for both levels (home page and card),
+  // stored under pages.shared. Everything else is per level.
+  const SHARED_FIELDS = ["lead", "gradedHead", "graded"];
   let pages = LS.get("pages", {});
+  if (!pages.shared) {   // first run of v11 on a device: drop old per-level openings and rubrics
+    pages.shared = {};    // so both levels show the confirmed default text
+    for (const k of SHARED_FIELDS) for (const lv of ["C2", "C3"]) if (pages[lv]) delete pages[lv][k];
+    LS.set("pages", pages);
+  }
   function pageFor(lv) {
-    const L = LEVELS[lv], saved = pages[lv] || {}, out = {};
+    const L = LEVELS[lv], out = {};
     for (const [k] of PAGE_FIELDS) {
+      const saved = SHARED_FIELDS.includes(k) ? pages.shared || {} : pages[lv] || {};
       out[k] = (k in saved ? saved[k] : k in (LEVEL_PAGE[lv] || {}) ? LEVEL_PAGE[lv][k] : DEFAULT_PAGE[k]).replace(/\{cn\}/g, L.cn).replace(/\{en\}/g, L.en);
     }
     return out;
   }
   function setPageField(lv, k, v) {
+    if (SHARED_FIELDS.includes(k)) lv = "shared";
     pages[lv] = { ...(pages[lv] || {}), [k]: v };
     LS.set("pages", pages);
   }
@@ -489,7 +499,7 @@
 
   // Never run an old copy: when a newer version is online, reload into it (only on the home
   // screen, never in the teacher screen, mid-practice or mid-recording).
-  const APP_VERSION = 10;
+  const APP_VERSION = 11;
   async function checkForUpdate() {
     try {
       if (!navigator.onLine) return;
@@ -782,11 +792,25 @@
       el.oninput = () => setPageField(lv, k, el.value);
       box.append(lab, el);
     };
+    {
+      const h = document.createElement("h3");
+      h.textContent = "Home page and card · both levels";
+      box.appendChild(h);
+      for (const [k, label, multi] of PAGE_FIELDS.filter(f => SHARED_FIELDS.includes(f[0]))) fieldEditor("C3", k, label, multi);
+      const reset = Object.assign(document.createElement("button"), { className: "ico del", textContent: "Reset the shared text to the original" });
+      reset.style.margin = "12px 0 26px";
+      reset.onclick = () => {
+        if (!confirm("Put the shared opening and rubric back to the original text?")) return;
+        delete pages.shared; pages.shared = {}; LS.set("pages", pages);
+        renderTeacher();
+      };
+      box.appendChild(reset);
+    }
     for (const lv of Object.keys(LEVELS)) {
       const h = document.createElement("h3");
       h.textContent = "Card page · " + LEVELS[lv].cn + " " + LEVELS[lv].en;
       box.appendChild(h);
-      for (const [k, label, multi] of PAGE_FIELDS.slice(0, 3)) fieldEditor(lv, k, label, multi);
+      for (const [k, label, multi] of PAGE_FIELDS.slice(0, 2)) fieldEditor(lv, k, label, multi);
       const hl = document.createElement("p");
       hl.className = "muted"; hl.style.margin = "10px 0 4px"; hl.textContent = "Hints";
       box.appendChild(hl);
@@ -804,11 +828,11 @@
       const add = Object.assign(document.createElement("button"), { className: "ico", textContent: "+ Add a hint" });
       add.onclick = () => { arr.push(""); LS.set("hints", hints); renderTeacher(); };
       box.appendChild(add);
-      for (const [k, label, multi] of PAGE_FIELDS.slice(3)) fieldEditor(lv, k, label, multi);
+      for (const [k, label, multi] of PAGE_FIELDS.slice(3).filter(f => !SHARED_FIELDS.includes(f[0]))) fieldEditor(lv, k, label, multi);
       const reset = Object.assign(document.createElement("button"), { className: "ico del", textContent: "Reset this card page to the original" });
       reset.style.margin = "12px 0 26px";
       reset.onclick = () => {
-        if (!confirm("Put this card page back to the original text?")) return;
+        if (!confirm("Put this card page back to the original text? (The shared opening and rubric stay.)")) return;
         delete pages[lv]; LS.set("pages", pages);
         hints[lv] = DEFAULT_HINTS[lv].slice(); LS.set("hints", hints);
         renderTeacher();
